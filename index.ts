@@ -1,10 +1,11 @@
-import puppeteer, { ElementHandle, Page, BoundingBox, Viewport, Browser } from "puppeteer"
+import puppeteer, { ElementHandle, Page, BoundingBox, Viewport } from "puppeteer"
 import fs from 'fs/promises'
 import cliProgress from 'cli-progress'
 import path from 'path'
 import { Command } from "commander";
-const program = new Command();
 import { mkdir, writeFile } from 'fs/promises'
+
+const program = new Command()
 
 program
   .version("1.0.0")
@@ -14,32 +15,6 @@ program
 
 const options = program.opts()
 const outputBasePath = options.output ? [options.output] : [__dirname, 'output']
-
-const minimalPdf = `%PDF-1.
-1 0 obj<</Pages 2 0 R>>endobj
-2 0 obj<</Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Parent 2 0 R>>endobj
-trailer <</Root 1 0 R>>`;
-
-async function waitForDownload(page: Page)
-{
-    await page.waitForSelector('.black-overlay')
-    await page.waitForSelector('.black-overlay', { hidden: true, timeout: 60000 })
-}
-
-async function waitForBlobUrlTarget(browser: Browser): Promise<Page> {
-    return new Promise(resolve => {
-      browser.on('targetcreated', async (target) => {
-        const newPage = await target.page()
-        if (newPage) {
-          const url = newPage.url()
-          if (url.startsWith('blob:')) {
-            resolve(newPage)
-          }
-        }
-      })
-    })
-}
 
 function screenshot(output: string, page: any, cardBoundingBox: BoundingBox, viewport: Viewport)
 {
@@ -53,6 +28,32 @@ function screenshot(output: string, page: any, cardBoundingBox: BoundingBox, vie
             height: Math.min(cardBoundingBox.height),
         }
     })
+}
+
+async function waitForTargetDownload(page: Page)
+{
+    const newTarget = await page.browserContext().waitForTarget(
+        target => target.url().startsWith('blob:')
+    )
+    const newPage = await newTarget.page() as Page
+    const blobUrl = newPage.url()
+    const blobData = await page.evaluate(async (url) => {
+        const response = await fetch(url)
+        const blob = await response.blob()
+
+        // @ts-ignore
+        const reader = new FileReader()
+        return new Promise(resolve => {
+            reader.onloadend = () => {
+                resolve(reader.result)
+            }
+            reader.readAsDataURL(blob)
+        }
+    )}, blobUrl) as string
+
+    await newPage.close()
+
+    return blobData
 }
 
 export async function main()
@@ -101,12 +102,14 @@ export async function main()
             const cnpj = cnpjText.replace(/[^\d]/g, '')
 
             // Apply query
+            bar.update(i, { empresa: row.EMPRESA, status: 'Pesquisando Antecipado', })
             const dataButton = await page.waitForSelector(`#pickerForm .row div.col-4:nth-child(${date.getMonth() + 4}) span`) as ElementHandle
             await dataButton.evaluate((button: any) => button.click())
             await page.click('button[type=submit]')
             await new Promise((resolve) => setTimeout(resolve, 2000))
 
             // Screenshot
+            bar.update(i, { empresa: row.EMPRESA, status: 'Salvando print', })
             await page.setViewport({ width: 1600, height: 500, })
             const card = await page.$('.card') as ElementHandle
             const cardBoundingBox = await card.boundingBox() as BoundingBox
@@ -114,38 +117,55 @@ export async function main()
             const outputDir = path.join(...outputBasePath, `${row.EMPRESA} - ${cnpj}`)
             await mkdir(outputDir, { recursive: true }).catch(_ => {})
             
-            const screenshotOutput = `${outputDir}/anteicipado-${date.getFullYear()}-${date.getMonth() + 1}.png`
+            const screenshotOutput = `${outputDir}/antecipado-${date.getFullYear()}-${date.getMonth() + 1}.png`
             await screenshot(screenshotOutput, page, cardBoundingBox, viewport)
-
-            // Print
-            await page.evaluate(() => {
-                // @ts-ignore
-                document.querySelector('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(2) > div > div > div > div:nth-child(1) > button').click()
-            })
             
-            const newTarget = await page.browserContext().waitForTarget(
-                target => target.url().startsWith('blob:')
-            )
-            const newPage = await newTarget.page() as Page
-            const blobUrl = newPage.url()
-            const blobData = await page.evaluate(async (url) => {
-                const response = await fetch(url);
-                const blob = await response.blob()
-
-                // @ts-ignore
-                const reader = new FileReader()
-                    reader.readAsDataURL(blob);
-                    return new Promise(resolve => {
-                      reader.onloadend = () => {
-                        resolve(reader.result)
-                    }
+            const hasDocs = !!(await page.$('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(3) > div > div > div > div:nth-child(1) > button'))
+            bar.update(i, { empresa: row.EMPRESA, status: hasDocs ? 'Tem documentos' : 'Não tem documentos', })
+            if (hasDocs) {
+                await page.evaluate(() => {
+                    // @ts-ignore
+                    document.querySelector('#checkall').click()
                 })
-            }, blobUrl) as string
-            console.log(blobData)
-            const printOutput = `${outputDir}/antecipado-${date.getFullYear()}-${date.getMonth() + 1}.pdf`
-            await writeFile(printOutput, blobData.split(',')[1], 'base64')
+
+                // Print
+                bar.update(i, { empresa: row.EMPRESA, status: 'Imprimindo', })
+                await page.evaluate(() => {
+                    // @ts-ignore
+                    document.querySelector('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(2) > div > div > div > div:nth-child(2) > button').click()
+                })
+                
+                const printOutput = `${outputDir}/antecipado-${date.getFullYear()}-${date.getMonth() + 1}.pdf`
+                const blobData = await waitForTargetDownload(page)
+                await writeFile(printOutput, blobData.split(',')[1], 'base64')
             
-            // Emite
+                // Emite
+                bar.update(i, { empresa: row.EMPRESA, status: 'Emitindo', })
+                await page.evaluate(() => {
+                    // @ts-ignore
+                    document.querySelector('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(3) > div > div > div > div:nth-child(2) > button').click()
+                })
+    
+                await page.evaluate(() => {
+                    // @ts-ignore
+                    document.querySelector('body > ngb-modal-window > div > div > jhi-confirmar-emissao-dar-consolidado > div.modal-body.container-tidy button.btn.btn-outline-success').click()
+                })
+    
+                try {
+                    const emissaoOutput = `${outputDir}/doc-arrecadacao-${date.getFullYear()}-${date.getMonth() + 1}.pdf`
+                    const data = await waitForTargetDownload(page)
+                    await writeFile(emissaoOutput, data.split(',')[1], 'base64')
+                } catch (e) {
+                    await page.evaluate(() => {
+                        // @ts-ignore
+                        document.querySelector('body > ngb-modal-window > div > div > jhi-escolher-vencimento-dar > div.modal-body.container-tidy > div.text-center.my-3 > button.btn.btn-outline-success').click()
+                    })
+                    const emissaoOutput = `${outputDir}/doc-arrecadacao-${date.getFullYear()}-${date.getMonth() + 1}.pdf`
+                    const data = await waitForTargetDownload(page)
+                    await writeFile(emissaoOutput, data.split(',')[1], 'base64')
+                }
+            }
+
             bar.update(i, { empresa: row.EMPRESA, status: 'Logout' })
             await page.evaluate(() => {
                 // @ts-ignore
