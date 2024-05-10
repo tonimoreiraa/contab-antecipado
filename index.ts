@@ -68,7 +68,7 @@ export async function main()
     const data = rows.slice(1).map(row => Object.fromEntries(row.map((value, i) => [rows[0][i], value])))
 
     // Launch browser
-    const browser = await puppeteer.launch({ headless: false })
+    const browser = await puppeteer.launch({ headless: false, })
     const page = await browser.newPage()
 
     bar.start(Object.keys(data).length, 0)
@@ -87,7 +87,7 @@ export async function main()
             await page.type('#username', row.LOGIN)
             await page.type('#password', row.SENHA)
             page.click('button[type="submit"]')
-            await page.waitForSelector('#mensagem-logado-como', {timeout: 60000})
+            await page.waitForSelector('#mensagem-logado-como', {timeout: 20000})
 
             await page.goto('https://contribuinte.sefaz.al.gov.br/cobrancadfe/#/calculo-nfe')
 
@@ -106,7 +106,7 @@ export async function main()
             const dataButton = await page.waitForSelector(`#pickerForm .row div.col-4:nth-child(${date.getMonth() + 4}) span`) as ElementHandle
             await dataButton.evaluate((button: any) => button.click())
             await page.click('button[type=submit]')
-            await new Promise((resolve) => setTimeout(resolve, 2000))
+            await new Promise((resolve) => setTimeout(resolve, 5000))
 
             // Screenshot
             bar.update(i, { empresa: row.EMPRESA, status: 'Salvando print', })
@@ -178,6 +178,7 @@ export async function main()
                 // @ts-ignore
                 localStorage.clear()
             })
+            await page.goto('about:blank')
         }
     }
     
