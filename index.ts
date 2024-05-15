@@ -105,8 +105,9 @@ export async function main()
             bar.update(i, { empresa: row.EMPRESA, status: 'Pesquisando Antecipado', })
             const dataButton = await page.waitForSelector(`#pickerForm .row div.col-4:nth-child(${date.getMonth() + 4}) span`) as ElementHandle
             await dataButton.evaluate((button: any) => button.click())
+            await new Promise((resolve) => setTimeout(resolve, 2500))
             await page.click('button[type=submit]')
-            await new Promise((resolve) => setTimeout(resolve, 5000))
+            await new Promise((resolve) => setTimeout(resolve, 2500))
 
             // Screenshot
             bar.update(i, { empresa: row.EMPRESA, status: 'Salvando print', })
