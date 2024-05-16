@@ -91,8 +91,18 @@ export async function main()
 
             await page.goto('https://contribuinte.sefaz.al.gov.br/cobrancadfe/#/calculo-nfe')
 
+            const queryDates: Date[] = []
             let date = new Date()
             date.setDate(0)
+            queryDates.push(date)
+
+            // If is type SN, query previous month
+            if (row.TIPO == 'SN') {
+                let date2 = new Date()
+                date2.setDate(0)
+                date2.setDate(0)
+                queryDates.push(date2)
+            }
 
             bar.update(i, { empresa: row.EMPRESA, status: 'Pesquisando Antecipado', })
 
@@ -101,69 +111,71 @@ export async function main()
             const cnpjText = await (await cnpjElement.getProperty('textContent')).jsonValue() as string
             const cnpj = cnpjText.replace(/[^\d]/g, '')
 
-            // Apply query
-            bar.update(i, { empresa: row.EMPRESA, status: 'Pesquisando Antecipado', })
-            const dataButton = await page.waitForSelector(`#pickerForm .row div.col-4:nth-child(${date.getMonth() + 4}) span`) as ElementHandle
-            await dataButton.evaluate((button: any) => button.click())
-            await new Promise((resolve) => setTimeout(resolve, 2500))
-            await page.click('button[type=submit]')
-            await new Promise((resolve) => setTimeout(resolve, 2500))
+            for (const date of queryDates) {
+                // Apply query
+                bar.update(i, { empresa: row.EMPRESA, status: 'Pesquisando Antecipado', })
+                const dataButton = await page.waitForSelector(`#pickerForm .row div.col-4:nth-child(${date.getMonth() + 4}) span`) as ElementHandle
+                await dataButton.evaluate((button: any) => button.click())
+                await new Promise((resolve) => setTimeout(resolve, 2500))
+                await page.click('button[type=submit]')
+                await new Promise((resolve) => setTimeout(resolve, 2500))
 
-            // Screenshot
-            bar.update(i, { empresa: row.EMPRESA, status: 'Salvando print', })
-            await page.setViewport({ width: 1600, height: 500, })
-            const card = await page.$('.card') as ElementHandle
-            const cardBoundingBox = await card.boundingBox() as BoundingBox
-            const viewport = page.viewport() as Viewport
-            const outputDir = path.join(...outputBasePath, `${row.EMPRESA} - ${cnpj}`)
-            await mkdir(outputDir, { recursive: true }).catch(_ => {})
-            
-            const screenshotOutput = `${outputDir}/antecipado-${date.getFullYear()}-${date.getMonth() + 1}.png`
-            await screenshot(screenshotOutput, page, cardBoundingBox, viewport)
-            
-            const hasDocs = !!(await page.$('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(3) > div > div > div > div:nth-child(1) > button'))
-            bar.update(i, { empresa: row.EMPRESA, status: hasDocs ? 'Tem documentos' : 'Não tem documentos', })
-            if (hasDocs) {
-                await page.evaluate(() => {
-                    // @ts-ignore
-                    document.querySelector('#checkall').click()
-                })
-
-                // Print
-                bar.update(i, { empresa: row.EMPRESA, status: 'Imprimindo', })
-                await page.evaluate(() => {
-                    // @ts-ignore
-                    document.querySelector('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(2) > div > div > div > div:nth-child(2) > button').click()
-                })
+                // Screenshot
+                bar.update(i, { empresa: row.EMPRESA, status: 'Salvando print', })
+                await page.setViewport({ width: 1600, height: 500, })
+                const card = await page.$('.card') as ElementHandle
+                const cardBoundingBox = await card.boundingBox() as BoundingBox
+                const viewport = page.viewport() as Viewport
+                const outputDir = path.join(...outputBasePath, `${row.EMPRESA} - ${cnpj}`)
+                await mkdir(outputDir, { recursive: true }).catch(_ => {})
                 
-                const printOutput = `${outputDir}/antecipado-${date.getFullYear()}-${date.getMonth() + 1}.pdf`
-                const blobData = await waitForTargetDownload(page)
-                await writeFile(printOutput, blobData.split(',')[1], 'base64')
-            
-                // Emite
-                bar.update(i, { empresa: row.EMPRESA, status: 'Emitindo', })
-                await page.evaluate(() => {
-                    // @ts-ignore
-                    document.querySelector('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(3) > div > div > div > div:nth-child(2) > button').click()
-                })
-    
-                await page.evaluate(() => {
-                    // @ts-ignore
-                    document.querySelector('body > ngb-modal-window > div > div > jhi-confirmar-emissao-dar-consolidado > div.modal-body.container-tidy button.btn.btn-outline-success').click()
-                })
-    
-                try {
-                    const emissaoOutput = `${outputDir}/doc-arrecadacao-${date.getFullYear()}-${date.getMonth() + 1}.pdf`
-                    const data = await waitForTargetDownload(page)
-                    await writeFile(emissaoOutput, data.split(',')[1], 'base64')
-                } catch (e) {
+                const screenshotOutput = `${outputDir}/antecipado-${date.getFullYear()}-${date.getMonth() + 1}.png`
+                await screenshot(screenshotOutput, page, cardBoundingBox, viewport)
+                
+                const hasDocs = !!(await page.$('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(3) > div > div > div > div:nth-child(1) > button'))
+                bar.update(i, { empresa: row.EMPRESA, status: hasDocs ? 'Tem documentos' : 'Não tem documentos', })
+                if (hasDocs) {
                     await page.evaluate(() => {
                         // @ts-ignore
-                        document.querySelector('body > ngb-modal-window > div > div > jhi-escolher-vencimento-dar > div.modal-body.container-tidy > div.text-center.my-3 > button.btn.btn-outline-success').click()
+                        document.querySelector('#checkall').click()
                     })
-                    const emissaoOutput = `${outputDir}/doc-arrecadacao-${date.getFullYear()}-${date.getMonth() + 1}.pdf`
-                    const data = await waitForTargetDownload(page)
-                    await writeFile(emissaoOutput, data.split(',')[1], 'base64')
+
+                    // Print
+                    bar.update(i, { empresa: row.EMPRESA, status: 'Imprimindo', })
+                    await page.evaluate(() => {
+                        // @ts-ignore
+                        document.querySelector('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(2) > div > div > div > div:nth-child(2) > button').click()
+                    })
+                    
+                    const printOutput = `${outputDir}/antecipado-${date.getFullYear()}-${date.getMonth() + 1}.pdf`
+                    const blobData = await waitForTargetDownload(page)
+                    await writeFile(printOutput, blobData.split(',')[1], 'base64')
+                
+                    // Emite
+                    bar.update(i, { empresa: row.EMPRESA, status: 'Emitindo', })
+                    await page.evaluate(() => {
+                        // @ts-ignore
+                        document.querySelector('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(3) > div > div > div > div:nth-child(2) > button').click()
+                    })
+        
+                    await page.evaluate(() => {
+                        // @ts-ignore
+                        document.querySelector('body > ngb-modal-window > div > div > jhi-confirmar-emissao-dar-consolidado > div.modal-body.container-tidy button.btn.btn-outline-success').click()
+                    })
+        
+                    try {
+                        const emissaoOutput = `${outputDir}/doc-arrecadacao-${date.getFullYear()}-${date.getMonth() + 1}.pdf`
+                        const data = await waitForTargetDownload(page)
+                        await writeFile(emissaoOutput, data.split(',')[1], 'base64')
+                    } catch (e) {
+                        await page.evaluate(() => {
+                            // @ts-ignore
+                            document.querySelector('body > ngb-modal-window > div > div > jhi-escolher-vencimento-dar > div.modal-body.container-tidy > div.text-center.my-3 > button.btn.btn-outline-success').click()
+                        })
+                        const emissaoOutput = `${outputDir}/doc-arrecadacao-${date.getFullYear()}-${date.getMonth() + 1}.pdf`
+                        const data = await waitForTargetDownload(page)
+                        await writeFile(emissaoOutput, data.split(',')[1], 'base64')
+                    }
                 }
             }
 
