@@ -116,7 +116,16 @@ export async function main()
                 bar.update(i, { empresa: row.EMPRESA, status: 'Pesquisando Antecipado', })
                 const dataButton = await page.waitForSelector(`#pickerForm .row div.col-4:nth-child(${date.getMonth() + 4}) span`) as ElementHandle
                 await dataButton.evaluate((button: any) => button.click())
-                await new Promise((resolve) => setTimeout(resolve, 2500))
+
+                const result = await page.evaluate(() => {
+                    // @ts-ignore
+                    document.querySelector('#situacoes-select').dispatchEvent(new Event('input', { bubbles: true }));
+                })
+
+                const emLiquidado = await page.waitForSelector('.ng-dropdown-panel-items > div:nth-child(2) div:nth-child(3)')
+                await emLiquidado?.click()
+
+                await new Promise(r => setTimeout(r, 2500))
                 await page.click('button[type=submit]')
                 await new Promise((resolve) => setTimeout(resolve, 2500))
 
