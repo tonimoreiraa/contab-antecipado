@@ -55,6 +55,12 @@ async function waitForTargetDownload(page: Page) {
     return blobData
 }
 
+async function waitForDownload(page: Page) {
+    await page.waitForSelector('.black-overlay')
+    await page.waitForSelector('.black-overlay', { hidden: true, timeout: 60000 })
+    await new Promise(r => setTimeout(r, 1000))
+}
+
 export async function main() {
     const bar = new cliProgress.SingleBar({
         format: ' {bar} | {empresa}: {status} | {value}/{total}'
@@ -116,18 +122,22 @@ export async function main() {
                 const dataButton = await page.waitForSelector(`#pickerForm .row div.col-4:nth-child(${date.getMonth() + 4}) span`) as ElementHandle
                 await dataButton.evaluate((button: any) => button.click())
 
-                const result = await page.evaluate(() => {
+                await page.evaluate(() => {
                     // @ts-ignore
                     document.querySelector('#situacoes-select').dispatchEvent(new Event('input', { bubbles: true }));
                 })
 
-                const emLiquidado = await page.waitForSelector('.ng-dropdown-panel-items > div:nth-child(2) div:nth-child(3)')
-                await emLiquidado?.click()
+                let statusButton = await page.waitForSelector('.ng-dropdown-panel-items > div:nth-child(2) div:nth-child(2)')
+                let statusText = await page.evaluate(el => el?.textContent, statusButton)
+                if (statusText?.trim() != 'Em Aberto') {
+                    statusButton = await page.waitForSelector('.ng-dropdown-panel-items > div:nth-child(2) div:nth-child(1)')
+                }
+                await statusButton?.click()
 
-                await new Promise(r => setTimeout(r, 2500))
+
                 await page.click('button[type=submit]')
-                await new Promise((resolve) => setTimeout(resolve, 2500))
 
+                await waitForDownload(page)
                 // Screenshot
                 bar.update(i, { empresa: row.EMPRESA, status: 'Salvando print', })
                 await page.setViewport({ width: 1600, height: 500, })
