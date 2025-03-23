@@ -4,6 +4,9 @@ import cliProgress from 'cli-progress'
 import path from 'path'
 import { Command } from "commander";
 import { mkdir, writeFile } from 'fs/promises'
+import { situacoesSelect } from "./situacoes-select";
+
+const situacao: keyof typeof situacoesSelect = 'em-aberto'
 
 const program = new Command()
 
@@ -56,7 +59,7 @@ async function waitForTargetDownload(page: Page) {
 }
 
 async function waitForDownload(page: Page) {
-    await page.waitForSelector('.black-overlay')
+    await page.waitForNetworkIdle()
     await page.waitForSelector('.black-overlay', { hidden: true, timeout: 60000 })
     await new Promise(r => setTimeout(r, 1000))
 }
@@ -82,7 +85,7 @@ export async function main() {
             i = i + 1
             bar.update(i, { empresa: row.EMPRESA, status: 'Autenticando' })
 
-            // Sign-in
+            // Sign In
             await page.goto('https://contribuinte.sefaz.al.gov.br/cobrancadfe/#/calculo-nfe')
 
             await page.waitForNavigation()
@@ -93,8 +96,25 @@ export async function main() {
             await page.click('form button[type=submit]')
             await page.waitForNavigation();
             const userLoggedSelector = '#logout';
+            const authErrorSelector = '.alert.alert-danger'
 
-            await page.waitForSelector(userLoggedSelector)
+            await Promise.race([
+                page.waitForSelector(userLoggedSelector),
+                page.waitForSelector(authErrorSelector)
+            ])
+
+            const authSuccess = Boolean(await page.$(userLoggedSelector))
+
+            if (!authSuccess) {
+                await page.setViewport({ width: 1600, height: 500, })
+                const card = await page.$('.card') as ElementHandle
+                const cardBoundingBox = await card.boundingBox() as BoundingBox
+                const viewport = page.viewport() as Viewport
+                const screenshotOutput = `${outputBasePath}/auth-error/${row.EMPRESA}.png`
+                await screenshot(screenshotOutput, page, cardBoundingBox, viewport)
+
+                continue;
+            }
 
             const queryDates: Date[] = []
             let date = new Date()
@@ -102,7 +122,8 @@ export async function main() {
             queryDates.push(date)
 
             // If is type SN, query previous month
-            if (row.TIPO == 'SN') {
+            const enablePreviousMonth = false;
+            if (row.TIPO == 'SN' && enablePreviousMonth) {
                 let date2 = new Date()
                 date2.setDate(0)
                 date2.setDate(0)
@@ -122,18 +143,16 @@ export async function main() {
                 const dataButton = await page.waitForSelector(`#pickerForm .row div.col-4:nth-child(${date.getMonth() + 4}) span`) as ElementHandle
                 await dataButton.evaluate((button: any) => button.click())
 
-                await page.evaluate(() => {
-                    // @ts-ignore
-                    document.querySelector('#situacoes-select').dispatchEvent(new Event('input', { bubbles: true }));
-                })
+                if (situacao != 'em-aberto') {
+                    const situacaoSelect = situacoesSelect[situacao]
+                    const result = await page.evaluate(() => {
+                        // @ts-ignore
+                        document.querySelector('#situacoes-select').dispatchEvent(new Event('input', { bubbles: true }));
+                    })
 
-                let statusButton = await page.waitForSelector('.ng-dropdown-panel-items > div:nth-child(2) div:nth-child(2)')
-                let statusText = await page.evaluate(el => el?.textContent, statusButton)
-                if (statusText?.trim() != 'Em Aberto') {
-                    statusButton = await page.waitForSelector('.ng-dropdown-panel-items > div:nth-child(2) div:nth-child(1)')
+                    const situacaoButton = await page.waitForSelector(situacaoSelect)
+                    await situacaoButton?.click()
                 }
-                await statusButton?.click()
-
 
                 await page.click('button[type=submit]')
 
