@@ -81,9 +81,10 @@ export async function main() {
     bar.start(Object.keys(data).length, 0)
     var i = 0;
     for (const row of data) {
+        const empresaKey = Object.keys(row)[0]
         try {
             i = i + 1
-            bar.update(i, { empresa: row.EMPRESA, status: 'Autenticando' })
+            bar.update(i, { empresa: row[empresaKey], status: 'Autenticando' })
 
             // Sign In
             await page.goto('https://contribuinte.sefaz.al.gov.br/cobrancadfe/#/calculo-nfe')
@@ -110,7 +111,7 @@ export async function main() {
                 const card = await page.$('.card') as ElementHandle
                 const cardBoundingBox = await card.boundingBox() as BoundingBox
                 const viewport = page.viewport() as Viewport
-                const screenshotOutput = `${outputBasePath}/auth-error/${row.EMPRESA}.png`
+                const screenshotOutput = `${outputBasePath}/auth-error/${row[empresaKey]}.png`
                 await screenshot(screenshotOutput, page, cardBoundingBox, viewport)
 
                 continue;
@@ -130,7 +131,7 @@ export async function main() {
                 queryDates.push(date2)
             }
 
-            bar.update(i, { empresa: row.EMPRESA, status: 'Pesquisando Antecipado', })
+            bar.update(i, { empresa: row[empresaKey], status: 'Pesquisando Antecipado', })
 
             // Get CNPJ
             const cnpjElement = (await page.waitForSelector('.alert.alert-data')) as ElementHandle
@@ -139,7 +140,7 @@ export async function main() {
 
             for (const date of queryDates) {
                 // Apply query
-                bar.update(i, { empresa: row.EMPRESA, status: 'Pesquisando Antecipado', })
+                bar.update(i, { empresa: row[empresaKey], status: 'Pesquisando Antecipado', })
                 const dataButton = await page.waitForSelector(`#pickerForm .row div.col-4:nth-child(${date.getMonth() + 4}) span`) as ElementHandle
                 await dataButton.evaluate((button: any) => button.click())
 
@@ -158,19 +159,19 @@ export async function main() {
 
                 await waitForDownload(page)
                 // Screenshot
-                bar.update(i, { empresa: row.EMPRESA, status: 'Salvando print', })
+                bar.update(i, { empresa: row[empresaKey], status: 'Salvando print', })
                 await page.setViewport({ width: 1600, height: 500, })
                 const card = await page.$('.card') as ElementHandle
                 const cardBoundingBox = await card.boundingBox() as BoundingBox
                 const viewport = page.viewport() as Viewport
-                const outputDir = path.join(...outputBasePath, `${row.EMPRESA} - ${cnpj}`)
+                const outputDir = path.join(...outputBasePath, `${row[empresaKey]} - ${cnpj}`)
                 await mkdir(outputDir, { recursive: true }).catch(_ => { })
 
                 const screenshotOutput = `${outputDir}/antecipado-${date.getFullYear()}-${date.getMonth() + 1}.png`
                 await screenshot(screenshotOutput, page, cardBoundingBox, viewport)
 
                 const hasDocs = !!(await page.$('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(3) > div > div > div > div:nth-child(1) > button'))
-                bar.update(i, { empresa: row.EMPRESA, status: hasDocs ? 'Tem documentos' : 'Não tem documentos', })
+                bar.update(i, { empresa: row[empresaKey], status: hasDocs ? 'Tem documentos' : 'Não tem documentos', })
                 if (hasDocs) {
                     await page.evaluate(() => {
                         // @ts-ignore
@@ -178,7 +179,7 @@ export async function main() {
                     })
 
                     // Print
-                    bar.update(i, { empresa: row.EMPRESA, status: 'Imprimindo', })
+                    bar.update(i, { empresa: row[empresaKey], status: 'Imprimindo', })
                     await page.evaluate(() => {
                         // @ts-ignore
                         document.querySelector('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(2) > div > div > div > div:nth-child(2) > button').click()
@@ -189,7 +190,7 @@ export async function main() {
                     await writeFile(printOutput, blobData.split(',')[1], 'base64')
 
                     // Emite
-                    bar.update(i, { empresa: row.EMPRESA, status: 'Emitindo', })
+                    bar.update(i, { empresa: row[empresaKey], status: 'Emitindo', })
                     await page.evaluate(() => {
                         // @ts-ignore
                         document.querySelector('body > jhi-main > div.container-fluid > div > jhi-calculo-nfe > div > div:nth-child(7) > div:nth-child(3) > div > div > div > div:nth-child(2) > button').click()
@@ -216,7 +217,7 @@ export async function main() {
                 }
             }
 
-            bar.update(i, { empresa: row.EMPRESA, status: 'Logout' })
+            bar.update(i, { empresa: row[empresaKey], status: 'Logout' })
             await page.evaluate(() => {
                 // @ts-ignore
                 localStorage.clear()
@@ -226,7 +227,7 @@ export async function main() {
             await page.goto('about:blank')
         } catch (e: any) {
             console.error(e)
-            console.error(`${row.EMPRESA}: ${e.message}`)
+            console.error(`${row[empresaKey]}: ${e.message}`)
             await page.evaluate(() => {
                 // @ts-ignore
                 localStorage.clear()
