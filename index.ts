@@ -6,7 +6,8 @@ import { Command } from "commander";
 import { mkdir, writeFile } from 'fs/promises'
 import { situacoesSelect } from "./situacoes-select";
 
-const situacao: keyof typeof situacoesSelect = 'em-aberto'
+const situacao: keyof typeof situacoesSelect = 'todos'
+const enablePreviousMonth = true;
 
 const program = new Command()
 
@@ -123,7 +124,6 @@ export async function main() {
             queryDates.push(date)
 
             // If is type SN, query previous month
-            const enablePreviousMonth = false;
             if (row.TIPO == 'SN' && enablePreviousMonth) {
                 let date2 = new Date()
                 date2.setDate(0)
@@ -145,6 +145,7 @@ export async function main() {
                 await dataButton.evaluate((button: any) => button.click())
 
                 if (situacao != 'em-aberto') {
+                    await page.waitForNetworkIdle()
                     const situacaoSelect = situacoesSelect[situacao]
                     const result = await page.evaluate(() => {
                         // @ts-ignore
