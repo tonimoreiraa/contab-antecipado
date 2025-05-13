@@ -141,6 +141,7 @@ export async function main() {
             for (const date of queryDates) {
                 // Apply query
                 bar.update(i, { empresa: row[empresaKey], status: 'Pesquisando Antecipado', })
+                await page.waitForNetworkIdle()
                 const dataButton = await page.waitForSelector(`#pickerForm .row div.col-4:nth-child(${date.getMonth() + 4}) span`) as ElementHandle
                 await dataButton.evaluate((button: any) => button.click())
 
